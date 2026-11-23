@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OG Ponte · Flow ⇄ Planilha ⇄ WordPress ⇄ ChatGPT
 // @namespace    nazarick.oestegeral
-// @version      1.2.0
+// @version      1.2.1
 // @updateURL    https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @downloadURL  https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @description  Leva prompts da planilha Nazarick ao Flow, prepara as imagens em 1280x720 JPG, manda os textos para revisão da AURA no ChatGPT, confere texto, links e português, e monta/agenda os posts nos WordPress (Oeste Geral, Em Foco, Além do Agro, UAI) sem passar o conteúdo pelo chat.
@@ -74,7 +74,7 @@
   const SITE = () => SITES[siteAtual()];
   const gidAtual = () => CFG.abaGid || SITE().gid;
 
-  const og = { versao: '1.2.0', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
+  const og = { versao: '1.2.1', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
   // og.site('emfoco') escolhe o site nas abas que não são WordPress (Flow, ChatGPT). No WordPress o site é o da própria página.
   og.site = (k) => { if (k) { if (!SITES[k]) throw new Error('site desconhecido: ' + k + ' (use ' + Object.keys(SITES).join(', ') + ')'); GM_setValue('ogsite', k); } return { site: siteAtual(), ...SITE() }; };
   const msg = (s) => { og.st = s; og.log.push(new Date().toTimeString().slice(0, 8) + ' ' + s); if (og.log.length > 200) og.log.shift(); };
@@ -187,7 +187,9 @@
       if (e !== h2[2]) f.push('lista fora do 3º H2');
     }
     const textos = blocosTexto(r).map((e) => e.textContent.replace(/https?:\/\/\S+/g, '').trim()).filter(Boolean);
-    const palavras = textos.join(' ').split(/\s+/).filter(Boolean).length;
+    // mesma contagem do 05_qa_artigo.py: tags viram espaço, URL do vídeo fora
+    const vis = (t) => { const d = document.createElement('textarea'); d.innerHTML = t.replace(/<[^>]+>/g, ' '); return d.value.replace(/\s+/g, ' ').trim(); };
+    const palavras = vis(p.html.replace(/<style[\s\S]*?<\/style>|<!--[\s\S]*?-->/g, '').replace(/<p>\s*https?:\/\/\S+\s*<\/p>/g, '')).split(' ').filter(Boolean).length;
     if (palavras < CFG.palavras[0] || palavras > CFG.palavras[1]) f.push(`${palavras} palavras`);
     const as = [...r.querySelectorAll('a')];
     const internos = as.filter((a) => (a.getAttribute('href') || '').includes(s.host.replace(/^www\./, '')));
