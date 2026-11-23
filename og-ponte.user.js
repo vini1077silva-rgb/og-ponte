@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OG Ponte · Flow ⇄ Planilha ⇄ WordPress ⇄ ChatGPT
 // @namespace    nazarick.oestegeral
-// @version      1.2.1
+// @version      1.2.2
 // @updateURL    https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @downloadURL  https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @description  Leva prompts da planilha Nazarick ao Flow, prepara as imagens em 1280x720 JPG, manda os textos para revisão da AURA no ChatGPT, confere texto, links e português, e monta/agenda os posts nos WordPress (Oeste Geral, Em Foco, Além do Agro, UAI) sem passar o conteúdo pelo chat.
@@ -74,7 +74,7 @@
   const SITE = () => SITES[siteAtual()];
   const gidAtual = () => CFG.abaGid || SITE().gid;
 
-  const og = { versao: '1.2.1', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
+  const og = { versao: '1.2.2', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
   // og.site('emfoco') escolhe o site nas abas que não são WordPress (Flow, ChatGPT). No WordPress o site é o da própria página.
   og.site = (k) => { if (k) { if (!SITES[k]) throw new Error('site desconhecido: ' + k + ' (use ' + Object.keys(SITES).join(', ') + ')'); GM_setValue('ogsite', k); } return { site: siteAtual(), ...SITE() }; };
   const msg = (s) => { og.st = s; og.log.push(new Date().toTimeString().slice(0, 8) + ' ' + s); if (og.log.length > 200) og.log.shift(); };
@@ -530,7 +530,11 @@
     const caixa = () => [...document.querySelectorAll('.ProseMirror[contenteditable="true"], #prompt-textarea')].filter(visivel)[0] || null;
     const botao = (re) => [...document.querySelectorAll('button')].filter(visivel).find((b) => re.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('data-testid') || '')));
     const gerando = () => !!botao(/(parar|interromper|stop)/i);
-    const respostas = () => [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+    // o ChatGPT nem sempre marca o papel das mensagens; a resposta da AURA é o bloco de código com "correcoes"
+    const respostas = () => {
+      const r = [...document.querySelectorAll('[data-message-author-role="assistant"]')];
+      return r.length ? r : [...document.querySelectorAll('pre')].filter((p) => p.innerText.includes('"correcoes"'));
+    };
 
     // Manda um texto para a AURA. Use numa aba aberta no projeto da AURA (CFG.projetoRevisao), uma aba por texto. O site vem de og.site().
     G.enviar = (linha) => guarda((async () => {
