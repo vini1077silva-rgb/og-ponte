@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OG Ponte · Flow ⇄ Planilha ⇄ WordPress ⇄ ChatGPT
 // @namespace    nazarick.oestegeral
-// @version      1.2.2
+// @version      1.2.3
 // @updateURL    https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @downloadURL  https://raw.githubusercontent.com/vini1077silva-rgb/og-ponte/main/og-ponte.user.js
 // @description  Leva prompts da planilha Nazarick ao Flow, prepara as imagens em 1280x720 JPG, manda os textos para revisão da AURA no ChatGPT, confere texto, links e português, e monta/agenda os posts nos WordPress (Oeste Geral, Em Foco, Além do Agro, UAI) sem passar o conteúdo pelo chat.
@@ -74,7 +74,7 @@
   const SITE = () => SITES[siteAtual()];
   const gidAtual = () => CFG.abaGid || SITE().gid;
 
-  const og = { versao: '1.2.2', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
+  const og = { versao: '1.2.3', cfg: CFG, sites: SITES, st: 'pronto', r: null, log: [] };
   // og.site('emfoco') escolhe o site nas abas que não são WordPress (Flow, ChatGPT). No WordPress o site é o da própria página.
   og.site = (k) => { if (k) { if (!SITES[k]) throw new Error('site desconhecido: ' + k + ' (use ' + Object.keys(SITES).join(', ') + ')'); GM_setValue('ogsite', k); } return { site: siteAtual(), ...SITE() }; };
   const msg = (s) => { og.st = s; og.log.push(new Date().toTimeString().slice(0, 8) + ' ' + s); if (og.log.length > 200) og.log.shift(); };
@@ -694,6 +694,20 @@
       return r.filter((p) => p.id !== ignorarId && normTit(p.title.raw) === normTit(titulo)).map((p) => p.id);
     }
     og.tituloRepetido = (titulo) => tituloRepetido(titulo);
+    // slug que o WordPress gera para o título (aproximação de sanitize_title)
+    const slugWP = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/&[a-z]+;/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    // Duplicado = outro post com o mesmo título OU slug que é o do título com "-2", "-3"... no fim
+    async function duplicidade(id) {
+      const p = await api(`wp/v2/posts/${id}?context=edit&_fields=id,slug,generated_slug,title`);
+      const slugAtual = p.slug || p.generated_slug || ''; const base = slugWP(p.title.raw).slice(0, 190);
+      const f = [];
+      const m = slugAtual.match(/^(.*)-(\d+)$/);
+      if (m && m[1] === base) f.push(`URL com sufixo -${m[2]} (já existe post com o mesmo endereço)`);
+      const outros = await tituloRepetido(p.title.raw, p.id);
+      if (outros.length) f.push(`outro post com o mesmo título: ${outros.join(', ')}`);
+      return f;
+    }
+    og.duplicidade = (ids) => guarda((async () => { const o = {}; for (const id of [].concat(ids)) { const f = await duplicidade(id); o[id] = f.length ? f : 'ok'; } return o; })());
 
     // ---------- data
     function conferirData(data) {
@@ -745,6 +759,7 @@
       let post;
       try { post = await api(item.postId ? 'wp/v2/posts/' + item.postId : 'wp/v2/posts', { method: 'POST', body: corpo }); }
       catch (e) { if (/meta/i.test(e.message)) { delete corpo.meta; post = await api('wp/v2/posts', { method: 'POST', body: corpo }); avisos.push('Yoast não gravou pela API'); } else throw e; }
+      try { (await duplicidade(post.id)).forEach((x) => avisos.push('DUPLICIDADE: ' + x)); } catch (e) { avisos.push('não conferiu duplicidade: ' + e.message); }
       return { linha: L, id: post.id, status: post.status, data: post.date, link: post.link, midia: Object.fromEntries(Object.entries(midia).map(([k, m]) => [k, m.id])), avisos };
     }
 
@@ -798,7 +813,7 @@
         if (p.author !== SW.autor) f.push('autor ' + p.author);
         if (SW.video === 'sempre' && !/wp:embed/.test(c)) f.push('sem vídeo (obrigatório neste site)');
         if (p.status === 'future' && new Date(p.date + '-03:00') < Date.now()) f.push('data no passado');
-        if (/-\d+$/.test(p.slug || p.generated_slug || '')) f.push('slug com -N (título repetido?)');
+        (await duplicidade(id)).forEach((x) => f.push(x));
         if (p.featured_media) { const m = await api('wp/v2/media/' + p.featured_media); if (!m.alt_text) f.push('capa sem alt'); if (m.media_details && m.media_details.width !== CFG.largura) f.push(`capa ${m.media_details.width}x${m.media_details.height}`); }
         res[id] = f.length ? f : 'ok';
       }
